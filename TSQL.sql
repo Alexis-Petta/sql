@@ -226,7 +226,7 @@ Se ha superado el límite máximo de compra de un producto
 Se sabe que esta regla actualmente se cumple.
 Se sabe que las facturas no pueden ser modificadas.
 */
-
+/*
 CREATE TRIGGER limite_compra 
 ON Item_Factura
 AFTER INSERT
@@ -262,4 +262,45 @@ BEGIN
         ROLLBACK TRANSACTION;
         RETURN;
     END
-END;
+END;*/
+
+--26
+
+/*
+
+Desarrolle el/los elementos de base de datos necesarios para que se cumpla automáticamente la regla de que una factura no puede contener productos que sean componentes de otros productos.
+
+Condiciones:
+
+Si esto ocurre, no debe grabarse esa factura.
+Debe emitirse un error en pantalla.
+
+Pista mínima: si la regla habla de productos dentro de una factura, pensá primero en Item_Factura, no en Factura.
+
+*/
+
+CREATE TRIGGER no_productos_compuestos_con_productos
+ON item_factura
+AFTER insert, update
+AS
+BEGIN
+
+IF EXISTS (
+        SELECT 1
+        FROM inserted INS
+        LEFT JOIN item_factura i
+            ON i.item_sucursal = ins.item_sucursal AND i.item_numero = ins.item_numero AND i.item_tipo = ins.item_tipo
+        LEFT JOIN producto p
+            ON i.item_producto = p.prod_codigo
+        LEFT JOIN Composicion c
+            ON c.comp_producto = ins.item_producto
+        WHERE p.prod_codigo = c.comp_componente
+    )
+    BEGIN
+        RAISERROR('Existe un producto que matchea con un componente de un producto compuesto', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+
+END
+

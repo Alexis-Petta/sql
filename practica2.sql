@@ -707,3 +707,101 @@ LEFT JOIN factura F1 ON F1.fact_tipo = item_tipo AND F1.fact_sucursal = item_suc
 LEFT JOIN producto p ON item_producto = p.prod_codigo
 WHERE YEAR(F1.fact_fecha)=2011
 GROUP BY p.prod_rubro, MONTH(F1.fact_fecha)
+
+--35
+/*
+
+Se requiere realizar una estadística de ventas por año y producto.
+
+La consulta debe retornar:
+
+Año
+Código de producto
+Detalle del producto
+Cantidad de facturas emitidas a ese producto ese año
+Cantidad de vendedores diferentes que vendieron ese producto ese año
+Cantidad de productos a los cuales compone ese producto; si no compone a ninguno, retornar 0
+Porcentaje de la venta de ese producto respecto a la venta total de ese año
+
+Condiciones:
+
+Ordenar por año.
+Dentro de cada año, ordenar por el producto con mayor cantidad vendida.
+
+*/
+
+SELECT  YEAR(f.fact_fecha), 
+        p.prod_codigo, 
+        p.prod_detalle,
+        COUNT(DISTINCT i.item_sucursal+i.item_tipo+i.item_numero),
+        COUNT(DISTINCT fact_vendedor),
+        ISNULL(COUNT(DISTINCT c.comp_producto),0),
+            ISNULL(
+        SUM(I.item_cantidad * I.item_precio) * 100 /
+        (
+            SELECT SUM(I2.item_cantidad * I2.item_precio)
+            FROM Item_Factura I2
+            JOIN Factura F2
+                ON F2.fact_tipo = I2.item_tipo
+               AND F2.fact_sucursal = I2.item_sucursal
+               AND F2.fact_numero = I2.item_numero
+            WHERE YEAR(F2.fact_fecha) = YEAR(F.fact_fecha)
+        ),
+        0
+    ) AS Porcentaje_Venta_Anual
+
+FROM Producto P
+LEFT JOIN Item_Factura I
+    ON p.prod_codigo = i.item_producto
+LEFT JOIN Factura F
+    ON i.item_sucursal = f.fact_sucursal AND i.item_tipo = f.fact_tipo AND i.item_numero = f.fact_numero
+LEFT JOIN composicion C
+    ON c.comp_componente  = p.prod_codigo
+GROUP BY YEAR(f.fact_fecha), 
+        p.prod_codigo, 
+        p.prod_detalle
+ORDER BY YEAR(f.fact_fecha) asc, SUM(I.item_cantidad) DESC;
+
+--14
+/*
+
+Escriba una consulta que retorne una estadística de ventas por cliente.
+
+La consulta debe retornar:
+
+Código del cliente
+Cantidad de veces que compró en el último año
+Promedio por compra en el último año
+Cantidad de productos diferentes que compró en el último año
+Monto de la mayor compra que realizó en el último año
+
+Condiciones:
+
+Se deberán retornar todos los clientes.
+Ordenar por la cantidad de veces que compró en el último año.
+No se deberán visualizar NULL en ninguna columna.
+
+*/
+
+SELECT  c.clie_codigo, 
+        COUNT(f.fact_sucursal+f.fact_numero+f.fact_tipo) cantidad_compras_ultimo_anio, 
+        ISNULL(SUM(i.item_cantidad*i.item_precio)/COUNT(*), 0) promedio_compra_ultimo_anio,
+        COUNT(DISTINCT i.item_producto) cantidad_productos_diferentes_anio,
+        ISNULL((SELECT TOP 1 SUM(i2.item_cantidad * i2.item_precio) 
+                    FROM item_factura i2
+                    LEFT JOIN factura f2
+                        ON i2.item_numero = f2.fact_numero AND i2.item_sucursal = f2.fact_sucursal AND i2.item_numero = f2.fact_numero
+                    WHERE c.clie_codigo = f2.fact_cliente AND YEAR(f2.fact_fecha) = (SELECT TOP 1 YEAR(ff.Fact_fecha) FROM factura ff
+                                                              ORDER BY YEAR(ff.Fact_fecha) desc)
+
+                    ORDER BY SUM(i2.item_cantidad * i2.item_precio) desc)
+              , 0) monto_mayor_compra_ultimo_anio
+FROM cliente c
+LEFT JOIN factura f
+    ON f.fact_cliente = c.clie_codigo
+LEFT JOIN Item_Factura i
+    ON i.item_numero = f.fact_numero AND i.item_sucursal = f.fact_sucursal AND i.item_numero = f.fact_numero
+WHERE YEAR(f.fact_fecha) = (SELECT TOP 1 YEAR(ff.Fact_fecha) FROM factura ff
+                            ORDER BY YEAR(ff.Fact_fecha) desc) OR YEAR(f.fact_fecha) IS NULL
+GROUP BY c.clie_codigo
+ORDER BY cantidad_compras_ultimo_anio desc
