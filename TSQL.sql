@@ -278,7 +278,7 @@ Debe emitirse un error en pantalla.
 Pista mínima: si la regla habla de productos dentro de una factura, pensá primero en Item_Factura, no en Factura.
 
 */
-
+/*
 CREATE TRIGGER no_productos_compuestos_con_productos
 ON item_factura
 AFTER insert, update
@@ -303,4 +303,215 @@ IF EXISTS (
     END
 
 END
+*/
 
+
+--10
+
+/*10. Crear el/los objetos de base de datos que ante el intento de borrar un artículo 
+verifique que no exista stock y si es así lo borre en caso contrario que emita un 
+mensaje de error.  
+
+CREATE TRIGGER tgx_no_borrar_producto_con_stock
+ON Producto
+INSTEAD OF DELETE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN Stock s ON s.stoc_producto = d.prod_codigo
+        WHERE s.stoc_cantidad > 0
+    )
+    BEGIN
+        RAISERROR('No se puede borrar el artículo porque existe stock disponible.', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+
+    DELETE s
+    FROM Stock s
+    JOIN deleted d ON s.stoc_producto = d.prod_codigo;
+
+    DELETE p
+    FROM Producto p
+    JOIN deleted d ON p.prod_codigo = d.prod_codigo;
+END;
+*/
+
+--21
+/*
+
+21. Desarrolle el/los elementos de base de datos necesarios para que se cumpla 
+automaticamente la regla de que en una factura no puede contener productos de 
+diferentes familias.  En caso de que esto ocurra no debe grabarse esa factura y 
+debe emitirse un error en pantalla. 
+Aco
+
+
+CREATE TRIGGER tgx_distintas_familias
+ON Item_Factura
+AFTER INSERT, UPDATE
+AS
+BEGIN
+IF EXISTS ( SELECT 1 FROM factura f 
+            left join Item_Factura itf
+                ON f.fact_numero = itf.item_numero AND f.fact_sucursal = itf.item_sucursal AND f.fact_tipo = itf.item_tipo
+            left join inserted ins
+                ON f.fact_numero = ins.item_numero AND f.fact_sucursal = ins.item_sucursal AND f.fact_tipo = ins.item_tipo
+            left join producto p1
+                ON itf.Item_producto = p1.prod_codigo
+            left join producto p2
+                ON ins.Item_producto = p2.prod_codigo
+            WHERE p1.prod_familia != p2.prod_familia
+          )
+BEGIN
+    RAISERROR('Productos con familias distintas.', 16, 1);
+    ROLLBACK TRANSACTION;
+    RETURN;
+END
+
+END
+----------------------------VERSION SUGERIDA
+CREATE TRIGGER tgx_distintas_familias
+ON Item_Factura
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        JOIN Item_Factura itf
+            ON itf.item_tipo = i.item_tipo
+           AND itf.item_sucursal = i.item_sucursal
+           AND itf.item_numero = i.item_numero
+        JOIN Producto p
+            ON p.prod_codigo = itf.item_producto
+        GROUP BY itf.item_tipo, itf.item_sucursal, itf.item_numero
+        HAVING COUNT(DISTINCT p.prod_familia) > 1
+    )
+    BEGIN
+        RAISERROR('Productos con familias distintas.', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+END;
+*/
+--23
+/*
+
+23. Desarrolle el/los elementos de base de datos necesarios para que ante una venta 
+automaticamante se controle que en una misma factura no puedan venderse más 
+de dos productos con composición.  Si esto ocurre debera rechazarse la factura. 
+
+
+
+CREATE TRIGGER tgx_no_mas_composicion
+ON item_factura
+AFTER Insert, UPDATE
+AS
+BEGIN
+IF EXISTS ( SELECT 1 FROM inserted ins
+            LEFT JOIN Item_Factura itf
+                ON ins.item_numero = itf.item_numero AND ins.item_sucursal = itf.item_sucursal AND ins.item_tipo = itf.item_tipo
+            LEFT JOIN Producto p
+                ON itf.item_producto = p.prod_codigo
+            LEFT JOIN Composicion c
+                ON p.prod_codigo = c.comp_producto
+            GROUP BY itf.item_numero, itf.item_sucursal, itf.item_tipo
+            HAVING COUNT(DISTINCT c.comp_producto) > 2
+            )
+    BEGIN
+            RAISERROR('Dos o mas productos con composicion.', 16, 1);
+            ROLLBACK TRANSACTION;
+            RETURN;
+    END
+END
+
+*/
+
+--30
+/*
+
+30. Agregar el/los objetos necesarios para crear una regla por la cual un cliente no 
+pueda comprar más de 100 unidades en el mes de ningún producto, si esto 
+ocurre no se deberá ingresar la operación y se deberá emitir un mensaje “Se ha 
+superado el límite máximo de compra de un producto”.  Se sabe que esta regla se 
+cumple y que las facturas no pueden ser modificadas.
+
+
+
+CREATE TRIGGER tgx_no_mas_cien_unidades
+ON Item_Factura
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM inserted ins
+        JOIN Factura f
+            ON f.fact_numero = ins.item_numero
+           AND f.fact_sucursal = ins.item_sucursal
+           AND f.fact_tipo = ins.item_tipo
+        JOIN Factura f_mes
+            ON f_mes.fact_cliente = f.fact_cliente
+           AND YEAR(f_mes.fact_fecha) = YEAR(f.fact_fecha)
+           AND MONTH(f_mes.fact_fecha) = MONTH(f.fact_fecha)
+        JOIN Item_Factura itf
+            ON itf.item_numero = f_mes.fact_numero
+           AND itf.item_sucursal = f_mes.fact_sucursal
+           AND itf.item_tipo = f_mes.fact_tipo
+           AND itf.item_producto = ins.item_producto
+        GROUP BY 
+            f.fact_cliente,
+            ins.item_producto,
+            YEAR(f.fact_fecha),
+            MONTH(f.fact_fecha)
+        HAVING SUM(itf.item_cantidad) > 100
+    )
+    BEGIN
+        RAISERROR('Se ha superado el límite máximo de compra de un producto', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+END;
+*/
+
+--18
+/*
+
+18. Sabiendo que el limite de credito de un cliente es el monto maximo que se le 
+puede facturar mensualmente, cree el/los objetos de base de datos necesarios 
+para que dicha regla de negocio se cumpla automaticamente. No se conoce la 
+forma de acceso a los datos ni el procedimiento por el cual se emiten las facturas
+
+
+
+CREATE TRIGGER tgx_limite_de_credito
+ON Factura
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        JOIN Cliente c
+            ON c.clie_codigo = i.fact_cliente
+        JOIN Factura f_mes
+            ON f_mes.fact_cliente = i.fact_cliente
+           AND YEAR(f_mes.fact_fecha) = YEAR(i.fact_fecha)
+           AND MONTH(f_mes.fact_fecha) = MONTH(i.fact_fecha)
+        GROUP BY 
+            i.fact_cliente,
+            YEAR(i.fact_fecha),
+            MONTH(i.fact_fecha),
+            c.clie_limite_credito
+        HAVING SUM(f_mes.fact_total) > c.clie_limite_credito
+    )
+    BEGIN
+        RAISERROR('Se ha superado el límite máximo de compra', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+END;
+*/
