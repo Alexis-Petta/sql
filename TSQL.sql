@@ -515,3 +515,54 @@ BEGIN
     END
 END;
 */
+
+
+/*
+
+
+/* Crear el/los objetos de bases de datos para que, ante una operación de venta, verifique que haya suficiente stock de cada producto para concretar la operación.
+En caso de haber stock para realizar la operación, debe mostrar el siguiente mensaje luego de concretar la venta:
+"Factura XXXX-XXXXXXX procesada correctamente”
+Si la operación no se puede realizar por stock insuficiente, debe mostrar el siguiente mensaje con las unidades de los productos que faltan para concretar la operación.
+"La factura XXXX-XXXXXXX no se puede emitir”
+"No se puede vender el producto XXXXXXXXX, Stock faltante: #####"
+"No se puede vender el producto XXXXXXXXX, Stock faltante: #####"
+"No se puede vender el producto XXXXXXXXX, Stock faltante: #####"
+No deben quedar facturas incompletas */
+
+create trigger parcial_1 on producto after insert, update, delete 
+as
+begin
+    update p
+    set prod_rubro = (
+        select top 1 r.rubr_id from rubro r
+        left join producto p2 on p2.prod_rubro = r.rubr_id
+        group by r.rubr_id
+        order by count(p2.prod_codigo) asc
+    )
+    from producto p
+    join inserted i on i.prod_codigo = p.prod_codigo
+    where p.prod_rubro in (
+        select p3.prod_rubro
+        from producto p3
+        group by p3.prod_rubro
+        having count(*) > (select count(*) * 0.40 from producto)
+    );
+    update p
+    set prod_rubro = (
+        select top 1 r.rubr_id from rubro r
+        left join producto p2 on p2.prod_rubro = r.rubr_id
+        group by r.rubr_id
+        order by count(p2.prod_codigo) asc
+    )
+    from producto p
+    join deleted i on i.prod_codigo = p.prod_codigo
+    where p.prod_rubro in (
+        select p3.prod_rubro
+        from producto p3
+        group by p3.prod_rubro
+        having count(*) > (select count(*) * 0.40 from producto)
+    );
+end;
+go
+*/
